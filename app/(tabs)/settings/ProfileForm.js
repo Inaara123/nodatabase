@@ -16,11 +16,18 @@ import RNPickerSelect from 'react-native-picker-select'; // Import picker for ge
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
 import { DataContext } from '../../../DataContext';
+import {supabase } from '../../../supabaseClient';
+import { UserContext } from '../../../UserContext';
 import { useNavigation } from 'expo-router';
 
 const ProfileForm = () => {
   const navigate = useNavigation();
   const { data, updateData } = useContext(DataContext);
+  const {userData} = useContext(UserContext);
+  const uid = userData.uid;
+  console.log("The UID is : ", uid);
+  const email = userData.email;
+  console.log("The email is : ", email);
   console.log("Initially when the data came in add doctor : ", data);
 
   const [name, setName] = useState('');
@@ -28,15 +35,31 @@ const ProfileForm = () => {
   const [phoneNumber, setPhoneNumber] = useState('');
   const [gender, setGender] = useState('male'); // Default gender
   const [image, setImage] = useState(null);
-
+  ///////// This will convert the data to the desired format //////////
+  function convertDataToDesiredFormat(data) {
+    const convertedData = {};
+    data.forEach((item, index) => {
+      const newKey = (index + 1).toString();
+      convertedData[newKey] = {
+        department: item.specialization, // Map specialization to department
+        email: item.email,
+        gender: item.gender,
+        doctor_id: item.doctor_id,
+        image: null, // Assuming image is not provided in the received data
+        name: item.name,
+        phoneNumber: "", // Assuming phoneNumber is not provided in the received data
+      };
+    });
+    return convertedData;
+  }
+  /////////////////////////////////////////////////////////////////////
   // Function to submit the form
-  const onSubmit = () => {
+  const onSubmit = async () => {
     if (!name || !department || !phoneNumber) {
       Alert.alert('Error', 'Please fill out all fields.');
       return;
     }
 
-    alert('Details Submitted!');
     console.log('The keys are : ', data);
     const masterelement = {
       name: name,
@@ -45,19 +68,60 @@ const ProfileForm = () => {
       gender: gender,
       image: image, // Storing image URI
     };
+    try {
+      const { error: newDoctorError } = await supabase
+        .from('doctors')
+        .insert([
+          {
+            hospital_id: uid,
+            name: name,
+            specialization: department,
+            contact_number: phoneNumber,
+            email: email,
+            gender: gender,
+            created_at: new Date().toISOString(),
+          },
+        ]);
+ 
+ 
+      if (newDoctorError) {
+        throw newDoctorError;
+      }
+ 
+ 
+      console.log('Successfully submitted details to Supabase');
+      Alert.alert('Success', 'Details submitted successfully.');
+ 
+ 
+      const { data: docData, error } = await supabase
+        .from('doctors')
+        .select('name, specialization, gender, email,doctor_id')
+        .eq('hospital_id', uid);
+ 
+ 
+      if (error) throw error;
+ 
+ 
+      console.log('The data from supabase  is : ', docData);
 
-    if (Object.keys(data).length === 0) {
-      console.log("The data is empty");
-      data[1] = masterelement;
-    } else {
-      const newKey = Object.keys(data).length + 1;
-      data[newKey] = masterelement;
-    }
-    console.log("The data getting updated is : ", data);
+ 
 
-    updateData(data);
+    // if (Object.keys(data).length === 0) {
+    //   console.log("The data is empty");
+    //   data[1] = masterelement;
+    // } else {
+    //   const newKey = Object.keys(data).length + 1;
+    //   data[newKey] = masterelement;
+    // }
+    //console.log("The data getting updated locally  is : ", data);
+    
+    updateData(convertDataToDesiredFormat(docData));
     router.replace('settings/Settings');
-  };
+  }
+  catch (error) {
+    console.log('error:', error);
+    Alert.alert('Error', error.message);
+  }};
 
   // Function to request permissions and open the image picker
   const pickImage = async () => {

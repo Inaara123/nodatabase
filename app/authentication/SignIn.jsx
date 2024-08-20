@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useContext } from 'react';
 import {
   View,
   TextInput,
@@ -11,17 +11,38 @@ import {
 import Icon from 'react-native-vector-icons/Ionicons';
 import { router } from 'expo-router';
 import { UserContext } from '../../UserContext';
-import { useContext } from 'react';
+import { DataContext } from '../../DataContext';
+import { HospitalContext } from '../../HospitalContext';
 import { auth } from '../../firebase';
 import { signInWithEmailAndPassword } from 'firebase/auth';
+import { supabase } from '../../supabaseClient';
 
 const LoginScreen = () => {
   const { updateUser } = useContext(UserContext);
+  const {data,updateData} = useContext(DataContext);
+  const { updateHospitalData } = useContext(HospitalContext);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false); // Loading state
-
+ ///////// This will convert the data to the desired format //////////
+ function convertDataToDesiredFormat(data) {
+  const convertedData = {};
+  data.forEach((item, index) => {
+    const newKey = (index + 1).toString();
+    convertedData[newKey] = {
+      department: item.specialization, // Map specialization to department
+      email: item.email,
+      gender: item.gender,
+      doctor_id: item.doctor_id,
+      image: null, // Assuming image is not provided in the received data
+      name: item.name,
+      phoneNumber: "", // Assuming phoneNumber is not provided in the received data
+    };
+  });
+  return convertedData;
+}
+/////////////////////////////////////////////////////
   // Function to handle the Sign In button press
   const handleSignIn = async () => {
     setLoading(true);
@@ -34,7 +55,51 @@ const LoginScreen = () => {
         email: user.email,
         displayName: user.displayName,
       };
+      const uid = userData.uid;
       updateUser(userData);
+      // Check if UID exists in Supabase
+      const { data: hospitalId, error: hospitalIdError } = await supabase
+        .from('hospitals')
+        .select('hospital_id')
+        .eq('hospital_id', user.uid)
+        .single();
+
+      if (hospitalIdError) {
+        if (hospitalIdError.code !== 'PGRST116') {
+          throw new Error(hospitalIdError.message);
+        } else {
+          console.log('UID does not exist in Supabase. Navigating to CollectDetails');
+          // router.replace('/(tabs)/home/CollectDetails');
+          router.replace(
+            {
+              pathname: '/(tabs)/home/CollectDetails',
+              params: { uid: user.uid,
+              email: user.email,
+              },
+            }
+          )
+          return; // Exit the function after navigation
+        }
+      }
+
+      // Additional logic if UID exists in Supabase
+      console.log('UID exists in Supabase:', hospitalId);
+      const { data: docData, error } = await supabase
+      .from('doctors')
+      .select('name, specialization, gender, email,doctor_id')
+      .eq('hospital_id', uid);
+
+
+    if (error) throw error;
+
+
+    console.log('The data from supabase in Signin  is : ', docData);
+    updateData(convertDataToDesiredFormat(docData));
+    console.log('data from supabase stored to local client')
+
+      // Check if Doctor details exist in Supabase
+      // Assuming similar logic to check doctor details and handle navigation
+
       router.replace('/(tabs)/home/HomePage');
     } catch (error) {
       Alert.alert('Error', error.message);

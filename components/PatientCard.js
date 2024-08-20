@@ -5,6 +5,7 @@ import { RealTimeContext } from '../RealTimeContext';
 import { ref, update } from 'firebase/database';
 import { UserContext } from '../UserContext';
 import { database } from '../firebase';
+import { supabase } from '../supabaseClient';
 
 const defaultMaleImage = require('../assets/images/default-male.png'); // Ensure the path is correct
 const defaultFemaleImage = require('../assets/images/default-female.png'); // Ensure the path is correct
@@ -13,44 +14,93 @@ const { width, height } = Dimensions.get('window');
 const PatientCard = ({ name, id, department, gender, image, onAddPatient }) => {
   const displayImage = image ? { uri: image } : gender === 'male' ? defaultMaleImage : defaultFemaleImage;
   const { realData, updateRealData } = useContext(RealTimeContext);
+  console.log("This is the new real data in patinetCard ",realData);
   const { userData } = useContext(UserContext);
   const uid = userData.uid; // Get the user ID from the context
 
   const [loading, setLoading] = useState(false); // Loading state
-
   function deleteAndRestructureWaitNo(data, docid) {
     const result = {};
     let resultIndex = 1;
 
-    const filteredEntries = Object.values(data).filter(
-      (entry) => !(entry.docid === docid && entry.waitno === 0)
-    );
+    let deletedEntry = null;
+    let newZeroWaitNoEntry = null;
+
+    const filteredEntries = Object.values(data).filter((entry) => {
+        if (entry.docid === docid && entry.waitno === 0) {
+            deletedEntry = entry; // Track the entry that is being deleted
+            return false; // Filter it out
+        }
+        return true; // Keep the rest of the entries
+    });
 
     const waitNoMap = {};
 
     for (const entry of filteredEntries) {
-      if (!waitNoMap[entry.docid]) {
-        waitNoMap[entry.docid] = 0;
-      }
+        if (!waitNoMap[entry.docid]) {
+            waitNoMap[entry.docid] = 0;
+        }
 
-      entry.waitno = waitNoMap[entry.docid];
+        if (waitNoMap[entry.docid] === 0) {
+            newZeroWaitNoEntry = entry; // Track the entry that will get waitno of 0
+        }
 
-      result[resultIndex++] = {
-        docid: entry.docid,
-        name: entry.name,
-        docdept: entry.docdept,
-        docname: entry.docname,
-        waitno: entry.waitno,
-      };
+        entry.waitno = waitNoMap[entry.docid];
 
-      waitNoMap[entry.docid]++;
+        result[resultIndex++] = {
+            docid: entry.docid,
+            name: entry.name,
+            docdept: entry.docdept,
+            docname: entry.docname,
+            waitno: entry.waitno,
+            appointment_id: entry.appointment_id,
+        };
+
+        waitNoMap[entry.docid]++;
     }
 
-    return result;
-  }
+    return {
+        newRealData: result,
+        deletedEntry: deletedEntry, // Entry that was deleted
+        newEntry: newZeroWaitNoEntry, // Entry with waitno now 0
+    };
+}
+
+  /// This is the old deleteAndRestructureWaitNo function ////
+  // function deleteAndRestructureWaitNo(data, docid) {
+  //   const result = {};
+  //   let resultIndex = 1;
+
+  //   const filteredEntries = Object.values(data).filter(
+  //     (entry) => !(entry.docid === docid && entry.waitno === 0)
+  //   );
+
+  //   const waitNoMap = {};
+
+  //   for (const entry of filteredEntries) {
+  //     if (!waitNoMap[entry.docid]) {
+  //       waitNoMap[entry.docid] = 0;
+  //     }
+
+  //     entry.waitno = waitNoMap[entry.docid];
+
+  //     result[resultIndex++] = {
+  //       docid: entry.docid,
+  //       name: entry.name,
+  //       docdept: entry.docdept,
+  //       docname: entry.docname,
+  //       waitno: entry.waitno,
+  //     };
+
+  //     waitNoMap[entry.docid]++;
+  //   }
+
+  //   return result;
+  // }
 
   function getNameForWaitNoZero(data, docid) {
     for (const key in data) {
+      console.log('this is the key',key);
       if (data[key].docid === docid && data[key].waitno === 0) {
         return data[key].name;
       }
@@ -60,11 +110,54 @@ const PatientCard = ({ name, id, department, gender, image, onAddPatient }) => {
 
   const handleTextPress = async () => {
     setLoading(true); // Start loading
-    const newRealData = deleteAndRestructureWaitNo(realData, id);
+    const {newRealData,deletedEntry,newEntry} = deleteAndRestructureWaitNo(realData, id);
+    // console.log('the new Real Data is : ',newRealData);
+    console.log('the deleted Entry is : ',deletedEntry);
+    console.log('the new 0 Entry is : ',newEntry);
 
     try {
       await update(ref(database, 'users/' + uid), { realtime: JSON.stringify(newRealData) });
       updateRealData(newRealData);
+/// This is for updating Time stamps in Supabase ////
+      if (deletedEntry && deletedEntry.appointment_id) {
+        const currentTime = new Date();
+        console.log('in if deletedentry');
+        currentTime.setHours(currentTime.getHours() + 5);
+        currentTime.setMinutes(currentTime.getMinutes() + 30);
+
+        const { error: updateError } = await supabase
+          .from('appointments')
+          .update({ consultation_end_time: currentTime.toISOString() })
+          .eq('appointment_id', deletedEntry.appointment_id);
+        console.log('in if deletedentry');
+
+        if (updateError) {
+          throw new Error('Error updating consultation_end_time: ' + updateError.message);
+        }
+        else{
+          alert
+        }
+      }
+
+      if (newEntry && newEntry.appointment_id) {
+        const currentTime = new Date();
+        currentTime.setHours(currentTime.getHours() + 5);
+        currentTime.setMinutes(currentTime.getMinutes() + 30);
+
+        const { error: updateError } = await supabase
+          .from('appointments')
+          .update({ consultation_start_time: currentTime.toISOString() })
+          .eq('appointment_id', newEntry.appointment_id);
+  
+        if (updateError) {
+          throw new Error('Error updating consultation_start_time: ' + updateError.message);
+        }
+        else{
+          alert('Consultation started');
+        }
+      }
+
+
     } catch (error) {
       Alert.alert('Error', error.message);
     } finally {

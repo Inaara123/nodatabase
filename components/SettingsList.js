@@ -12,6 +12,7 @@ const SettingsList = ({ name, phone, image,gender, onModify, onDelete, }) => {
   : gender === 'male'
   ? defaultMaleImage
   : defaultFemaleImage;
+  
   return (
     <View style={styles.container}>
       <View style={styles.imageContainer}>

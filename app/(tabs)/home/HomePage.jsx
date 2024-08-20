@@ -4,15 +4,18 @@ import HomeComponent from '../../../components/HomeComponent';
 import PatientCard from '../../../components/PatientCard';
 import { DataContext } from '../../../DataContext';
 import { RealTimeContext } from '../../../RealTimeContext';
+import { HospitalContext } from '../../../HospitalContext';
 import { UserContext } from '../../../UserContext';
 
 const HomePage = () => {
   const { userData } = useContext(UserContext);
   const { data } = useContext(DataContext);
-
+  const { hospitalData } = useContext(HospitalContext);
+//// this is will check if doctor details on local storage is empty //////
   if (Object.keys(data).length === 0) {
-    const email = userData.email;
+    const email = hospitalData.administrator;
     console.log('The email is:', email);
+    //// Display Add doctors page //////////////
     return (
       <SafeAreaView style={styles.safeArea}>
         <StatusBar barStyle="light-content" backgroundColor="#0E0F19" />
